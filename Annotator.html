@@ -1,0 +1,903 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Annotator — with Recents & Auto-sum</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial; margin:0; padding:12px; background:#fafafa; color:#111; }
+  h2 { margin:6px 0 10px 0; font-size:18px; }
+  #controls { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  .btn { background:#007aff; color:white; border:none; padding:8px 12px; border-radius:8px; font-size:15px; }
+  .btn.secondary { background:#555; }
+  #canvasWrap { text-align:center; background:white; border-radius:8px; padding:8px; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+  canvas { max-width:100%; height:auto; border-radius:6px; touch-action:none; background:#f8f8f8; }
+  label { font-size:13px; display:block; margin-top:6px; }
+  input[type="text"], input[type="number"], input[type="tel"] { padding:8px; border-radius:6px; border:1px solid #ddd; width:100%; box-sizing:border-box; font-size:15px; }
+  .row { display:flex; gap:8px; align-items:end; }
+  .col { flex:1; }
+  #markerList { max-height:140px; overflow:auto; margin-top:8px; background:#fff; padding:8px; border-radius:6px; border:1px solid #eee; }
+  .markerItem { padding:6px; border-bottom:1px dashed #eee; font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .small { font-size:12px; color:#666; }
+  #generateArea { margin-top:12px; }
+  .generatedRow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+  .thumb { width:120px; height:80px; object-fit:cover; border-radius:6px; border:1px solid #ddd; }
+  .link { display:inline-block; margin:6px 6px 0 0; padding:8px 10px; background:#222; color:#fff; border-radius:6px; text-decoration:none; font-size:13px; }
+  .hint { color:#666; font-size:13px; margin-top:6px; }
+  input[type="range"] { width:100%; }
+  .mini { font-size:12px; color:#666; margin-left:6px; }
+  #thumbBar { display:flex; gap:8px; overflow:auto; padding:6px 0; margin-top:8px; }
+  .thumbItem { width:64px; height:48px; object-fit:cover; border-radius:6px; border:2px solid transparent; cursor:pointer; }
+  .thumbItem.active { border-color:#007aff; }
+  .modalBack { position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.4); display:none; align-items:center; justify-content:center; z-index:9999; }
+  .modal { background:white; padding:12px; border-radius:10px; width:92%; max-width:420px; box-shadow:0 8px 24px rgba(0,0,0,0.2); }
+  .modal h3 { margin:0 0 8px 0; font-size:16px; }
+  .tiny { font-size:12px; color:#666; margin-top:6px; }
+  #summaryArea { background:#fff; padding:10px; border-radius:8px; border:1px solid #eee; margin-top:12px; }
+  textarea { width:100%; min-height:140px; padding:8px; border-radius:6px; border:1px solid #ddd; box-sizing:border-box; font-size:15px; }
+  .flexRow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .pill { display:inline-block; padding:6px 8px; border-radius:12px; background:#f0f0f0; margin:4px; cursor:pointer; border:1px solid #e0e0e0; font-size:13px; }
+  .pill:hover { background:#e8f4ff; }
+  .note { color:#a33; font-size:12px; margin-top:8px; }
+</style>
+</head>
+<body>
+  <h2>Annotator — Recents & Auto-sum</h2>
+
+  <div id="controls">
+    <button id="cameraBtn" class="btn">Camera</button>
+    <button id="albumBtn" class="btn">Album</button>
+    <button id="clearBtn" class="btn secondary">Clear (current)</button>
+    <button id="recalcBtn" class="btn">Recalc Total</button>
+    <button id="generateBtn" class="btn">Generate (current)</button>
+    <button id="generateAllBtn" class="btn">Batch Generate</button>
+  </div>
+
+  <input id="fileCamera" type="file" accept="image/*" capture="environment" style="display:none" />
+  <input id="fileAlbum" type="file" accept="image/*" style="display:none" />
+
+  <div class="row" style="gap:10px;">
+    <div class="col">
+      <label>Buyer name (applies to new taps)</label>
+      <!-- datalist for recents -->
+      <input id="buyerName" list="recentBuyersList" type="text" placeholder="Type or pick a recent buyer" />
+      <datalist id="recentBuyersList"></datalist>
+      <div style="margin-top:6px;">
+        <span id="recentPills"></span>
+      </div>
+      <div style="margin-top:6px;">
+        <label class="tiny"><input id="autoSaveBuyer" type="checkbox" checked> Auto-save new buyer names</label>
+        <button id="clearRecents" class="btn secondary" style="margin-left:8px">Clear recents</button>
+      </div>
+    </div>
+    <div style="width:150px;">
+      <label>Total (top-left)</label>
+      <input id="buyerTotal" type="tel" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 26" />
+    </div>
+  </div>
+
+  <label style="margin-top:8px;">Font-size multiplier</label>
+  <input id="sizeRange" type="range" min="1" max="12" value="8" />
+
+  <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+    <div style="flex:1;">
+      <label class="mini">Export max width (px)</label>
+      <input id="exportWidth" type="number" value="1200" style="width:120px;" />
+    </div>
+    <div style="width:160px;">
+      <label class="mini">JPEG quality</label>
+      <input id="exportQuality" type="number" step="0.1" min="0.1" max="1" value="0.8" style="width:100%;" />
+    </div>
+  </div>
+
+  <div id="canvasWrap" style="margin-top:12px;">
+    <canvas id="c"></canvas>
+    <div class="hint">Tap an item to add price — numeric keyboard should appear. Use recent buyer pills to quickly switch buyer. Totals auto-sum from item labels.</div>
+    <div class="note" id="browserNote"></div>
+  </div>
+
+  <div id="thumbBar" aria-label="thumbnails"></div>
+  <div id="markerList"></div>
+
+  <div id="generateArea">
+    <div id="generatedList" class="small"></div>
+    <div id="batchActions" style="margin-top:10px;"></div>
+  </div>
+
+  <!-- price modal -->
+  <div id="priceModal" class="modalBack" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Add price label</h3>
+      <div style="display:flex; gap:8px;">
+        <div style="flex:1;">
+          <label class="tiny">Original</label>
+          <input id="origInput" type="tel" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 10" />
+        </div>
+        <div style="width:80px;">
+          <label class="tiny">Fee</label>
+          <input id="feeInput" type="tel" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 5" />
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <label class="tiny"><input id="useCustom" type="checkbox"> Use custom text</label>
+        <input id="customInput" type="text" placeholder="Custom label (e.g. 2pcs, gift)" style="margin-top:6px; display:none;"/>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:10px; justify-content:flex-end;">
+        <button id="cancelPrice" class="btn secondary">Cancel</button>
+        <button id="addPrice" class="btn">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- summary -->
+  <div id="summaryArea" style="margin-top:12px;">
+    <div class="flexRow" style="margin-bottom:8px;">
+      <div style="flex:1;">
+        <label>Title (auto-filled)</label>
+        <input id="summaryTitle" type="text" />
+      </div>
+    </div>
+    <div class="flexRow" style="gap:8px; align-items:center;">
+      <button id="generateSummary" class="btn">Generate Summary</button>
+      <button id="copySummary" class="btn secondary">Copy</button>
+      <button id="shareSummary" class="btn">Share</button>
+    </div>
+    <label style="margin-top:8px;">Summary</label>
+    <textarea id="summaryText"></textarea>
+    <div class="tiny" style="margin-top:6px;">❗️漏掉/有误tt我aaa🥹</div>
+  </div>
+
+<script>
+(function(){
+  // DOM refs
+  const cameraBtn = document.getElementById('cameraBtn');
+  const albumBtn = document.getElementById('albumBtn');
+  const fileCamera = document.getElementById('fileCamera');
+  const fileAlbum = document.getElementById('fileAlbum');
+  const clearBtn = document.getElementById('clearBtn');
+  const recalcBtn = document.getElementById('recalcBtn');
+  const generateBtn = document.getElementById('generateBtn');
+  const generateAllBtn = document.getElementById('generateAllBtn');
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const buyerNameEl = document.getElementById('buyerName');
+  const buyerTotalEl = document.getElementById('buyerTotal');
+  const sizeRange = document.getElementById('sizeRange');
+  const exportWidthEl = document.getElementById('exportWidth');
+  const exportQualityEl = document.getElementById('exportQuality');
+  const thumbBar = document.getElementById('thumbBar');
+  const markerList = document.getElementById('markerList');
+  const generatedList = document.getElementById('generatedList');
+  const batchActions = document.getElementById('batchActions');
+  const browserNote = document.getElementById('browserNote');
+
+  const priceModal = document.getElementById('priceModal');
+  const origInput = document.getElementById('origInput');
+  const feeInput = document.getElementById('feeInput');
+  const useCustom = document.getElementById('useCustom');
+  const customInput = document.getElementById('customInput');
+  const addPriceBtn = document.getElementById('addPrice');
+  const cancelPriceBtn = document.getElementById('cancelPrice');
+
+  const recentsListEl = document.getElementById('recentBuyersList');
+  const recentPills = document.getElementById('recentPills');
+  const autoSaveBuyer = document.getElementById('autoSaveBuyer');
+  const clearRecents = document.getElementById('clearRecents');
+
+  const summaryTitle = document.getElementById('summaryTitle');
+  const generateSummaryBtn = document.getElementById('generateSummary');
+  const copySummaryBtn = document.getElementById('copySummary');
+  const shareSummaryBtn = document.getElementById('shareSummary');
+  const summaryText = document.getElementById('summaryText');
+
+  // state
+  let images = []; // {img, src, filename, markers:[], buyerName, buyerTotal}
+  let currentIndex = -1;
+  let lastTapPos = null;
+  let dragging = null;
+  let isPointerDown = false;
+  let lastBatchFiles = [];
+  const LS_RECENTS = 'annotator_recent_buyers_v1';
+  const LS_LAST = 'annotator_last_buyer_v1';
+
+  // init
+  summaryTitle.value = `${formatDDMM(new Date())} 扫街03号-肾表`;
+  initRecentsUI();
+
+  // detect Brave-ish note
+  const ua = navigator.userAgent || '';
+  if(/Brave/i.test(ua) || (ua.includes('CriOS') && ua.includes('Brave'))){
+    browserNote.textContent = 'Using Brave on iOS: for most reliable keyboard focus open in Safari / add to Home Screen.';
+  }
+
+  // file handlers
+  cameraBtn.addEventListener('click', ()=> fileCamera.click());
+  albumBtn.addEventListener('click', ()=> fileAlbum.click());
+  fileCamera.addEventListener('change', e => handleNewFile(e.target.files[0]));
+  fileAlbum.addEventListener('change', e => handleNewFile(e.target.files[0]));
+
+  clearBtn.addEventListener('click', ()=>{
+    if(currentIndex < 0) return;
+    if(!confirm('Clear all markers & inputs for current image?')) return;
+    images[currentIndex].markers = [];
+    images[currentIndex].buyerName = '';
+    images[currentIndex].buyerTotal = '';
+    buyerNameEl.value = '';
+    buyerTotalEl.value = '';
+    updateList(); redraw();
+  });
+
+  recalcBtn.addEventListener('click', ()=>{
+    if(currentIndex < 0) return alert('Open an image first.');
+    recalcBuyerTotalsForImage(currentIndex);
+    redraw();
+    updateList();
+    alert('Recalculated totals for this image.');
+  });
+
+  // handle new file robustly
+  function handleNewFile(file){
+    if(!file) return;
+    saveCurrentToState();
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const entry = { img, src: url, filename: file.name || ('image' + (images.length+1)), markers: [], buyerName: '', buyerTotal: '' };
+        images.push(entry);
+        currentIndex = images.length - 1;
+        // prefill buyerName with last used
+        const last = localStorage.getItem(LS_LAST);
+        if(last) entry.buyerName = last;
+        buyerNameEl.value = entry.buyerName || '';
+        buyerTotalEl.value = entry.buyerTotal || '';
+        updateThumbs();
+        setTimeout(()=> { loadCurrentImageToCanvas(); }, 60);
+      } catch(e){ console.error('handleNewFile onload', e); }
+    };
+    img.onerror = ()=> { alert('Image failed to load'); };
+    img.src = url;
+  }
+
+  function saveCurrentToState(){
+    if(currentIndex < 0) return;
+    images[currentIndex].buyerName = buyerNameEl.value || '';
+    images[currentIndex].buyerTotal = buyerTotalEl.value || '';
+    // if buyer has text and auto-save on, save to recents
+    const b = (buyerNameEl.value || '').trim();
+    if(b && autoSaveBuyer.checked) addRecentBuyer(b);
+  }
+
+  function loadCurrentImageToCanvas(){
+    try {
+      if(currentIndex < 0){ ctx.clearRect(0,0,canvas.width,canvas.height); return; }
+      const entry = images[currentIndex];
+      if(!entry || !entry.img || !entry.img.naturalWidth){ setTimeout(loadCurrentImageToCanvas,80); return; }
+      canvas.width = entry.img.naturalWidth;
+      canvas.height = entry.img.naturalHeight;
+      const cssW = Math.min(window.innerWidth - 30, entry.img.naturalWidth);
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = (cssW * (entry.img.naturalHeight/entry.img.naturalWidth)) + 'px';
+      buyerNameEl.value = entry.buyerName || '';
+      buyerTotalEl.value = entry.buyerTotal || '';
+      updateList();
+      setTimeout(()=>{ try{ redraw(); } catch(e){ console.error(e); } }, 30);
+    } catch(e){ console.error('loadCurrentImageToCanvas', e); }
+  }
+
+  function updateThumbs(){
+    thumbBar.innerHTML = '';
+    images.forEach((entry, idx)=>{
+      const imgEl = document.createElement('img');
+      imgEl.src = entry.src;
+      imgEl.className = 'thumbItem' + (idx===currentIndex ? ' active' : '');
+      imgEl.title = entry.filename;
+      imgEl.onclick = ()=> {
+        saveCurrentToState();
+        currentIndex = idx;
+        updateThumbs();
+        loadCurrentImageToCanvas();
+      };
+      const wrapper = document.createElement('div');
+      wrapper.style.position='relative'; wrapper.style.display='inline-block';
+      wrapper.appendChild(imgEl);
+      const del = document.createElement('button');
+      del.textContent = '✕'; del.title = 'Remove image';
+      del.style.position='absolute'; del.style.top='-6px'; del.style.right='-6px';
+      del.style.background='rgba(0,0,0,0.6)'; del.style.color='white'; del.style.border='none';
+      del.style.borderRadius='10px'; del.style.width='22px'; del.style.height='22px'; del.style.fontSize='12px';
+      del.onclick = (ev)=>{ ev.stopPropagation(); if(confirm('Remove this image?')){ images.splice(idx,1); if(currentIndex>=images.length) currentIndex = images.length - 1; updateThumbs(); loadCurrentImageToCanvas(); } };
+      wrapper.appendChild(del);
+      thumbBar.appendChild(wrapper);
+    });
+  }
+
+  // drawing helpers
+  function computeLabelBox(text, x, y, sizeVal, w, h){
+    const factor = sizeVal/4;
+    const fontSize = Math.max(10, Math.round(w * (0.025*factor)));
+    ctx.font = `bold ${fontSize}px -apple-system, system-ui, Arial`;
+    const metrics = ctx.measureText(text);
+    const tw = metrics.width;
+    const th = fontSize;
+    let bx = x - Math.round(tw/2) - 10;
+    let by;
+    if(y > h*0.55) by = y - th - 28; else by = y + 20;
+    bx = Math.max(6, Math.min(bx, w - tw - 26));
+    by = Math.max(6, Math.min(by, h - th - 18));
+    return { bx, by, bw: tw + 20, bh: th + 12 };
+  }
+
+  function redraw(){
+    try {
+      if(currentIndex < 0){ ctx.clearRect(0,0,canvas.width,canvas.height); markerList.textContent='Load a photo (camera or album) to begin.'; return; }
+      const entry = images[currentIndex];
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(entry.img, 0, 0, canvas.width, canvas.height);
+      const currentBuyer = (buyerNameEl.value || '').trim();
+      const currentTotal = (buyerTotalEl.value || '').trim();
+      if(currentBuyer) drawPreviewTopLeft(ctx, currentBuyer, currentTotal, canvas.width, canvas.height);
+      (entry.markers || []).forEach(m=>{
+        const x = Math.round(m.x_pct * canvas.width);
+        const y = Math.round(m.y_pct * canvas.height);
+        drawLabel(ctx, m.price, x, y, sizeRange.value, canvas.width, canvas.height);
+      });
+    } catch(e){ console.error('redraw', e); }
+  }
+
+  function drawPreviewTopLeft(ctxLocal, name, total, w, h){
+    const factor = sizeRange.value/4;
+    const pad = Math.round(w*0.01)+8;
+    const nameSize = Math.max(14, Math.round(w*0.035*factor));
+    ctxLocal.font = `bold ${nameSize}px -apple-system, system-ui, Arial`;
+    const nmW = ctxLocal.measureText(name).width;
+    const nameBw = nmW + 16;
+    ctxLocal.fillStyle = 'rgba(255,255,255,0.95)';
+    roundRect(ctxLocal, pad-6, pad-8, nameBw, nameSize+14, 8, true, false);
+    ctxLocal.fillStyle = '#000';
+    ctxLocal.textAlign = 'center';
+    ctxLocal.textBaseline = 'middle';
+    ctxLocal.fillText(name, pad-6 + nameBw/2, pad + (nameSize/2));
+    if(total){
+      const totalSize = Math.max(12, Math.round(w*0.028*factor));
+      ctxLocal.font = `bold ${totalSize}px -apple-system, system-ui, Arial`;
+      const tbW = ctxLocal.measureText(total).width;
+      const totalBw = tbW + 16;
+      const by = pad + nameSize + 8;
+      ctxLocal.fillStyle = 'rgb(0,150,70)';
+      roundRect(ctxLocal, pad-6, by-10, totalBw, totalSize+12, 8, true, false);
+      ctxLocal.fillStyle = '#fff';
+      ctxLocal.fillText(total, pad-6 + totalBw/2, by + (totalSize/2));
+    }
+    ctxLocal.textAlign = 'start';
+    ctxLocal.textBaseline = 'alphabetic';
+  }
+
+  function drawLabel(ctxLocal, text, x, y, sizeVal, w, h){
+    const factor = sizeVal/4;
+    const fontSize = Math.max(12, Math.round(w * (0.025*factor)));
+    ctxLocal.font = `bold ${fontSize}px -apple-system, system-ui, Arial`;
+    const metrics = ctxLocal.measureText(text);
+    const tw = metrics.width;
+    const th = fontSize;
+    let bx = x - Math.round(tw/2) - 10;
+    let by;
+    if(y > h*0.55) by = y - th - 28; else by = y + 20;
+    bx = Math.max(6, Math.min(bx, w - tw - 26));
+    by = Math.max(6, Math.min(by, h - th - 18));
+    ctxLocal.fillStyle = 'rgba(255,255,255,0.95)';
+    roundRect(ctxLocal, bx, by, tw+20, th+12, 8, true, false);
+    ctxLocal.fillStyle = '#000';
+    ctxLocal.textAlign = 'center';
+    ctxLocal.textBaseline = 'middle';
+    ctxLocal.fillText(text, bx + (tw+20)/2, by + (th+12)/2);
+    ctxLocal.textAlign = 'start';
+    ctxLocal.textBaseline = 'alphabetic';
+  }
+
+  function roundRect(ctxLocal, x, y, w, h, r, fill, stroke){
+    if(typeof r==='undefined') r=5;
+    ctxLocal.beginPath();
+    ctxLocal.moveTo(x+r,y);
+    ctxLocal.arcTo(x+w, y, x+w, y+h, r);
+    ctxLocal.arcTo(x+w, y+h, x, y+h, r);
+    ctxLocal.arcTo(x, y+h, x, y, r);
+    ctxLocal.arcTo(x, y, x+w, y, r);
+    ctxLocal.closePath();
+    if(fill) ctxLocal.fill();
+    if(stroke) ctxLocal.stroke();
+  }
+
+  function clientToCanvasCoords(cx, cy){
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width;
+    return { x: (cx - rect.left) * sx, y: (cy - rect.top) * sx };
+  }
+
+  // click to add label -> show modal + try to focus numeric
+  canvas.addEventListener('click', (e)=>{
+    try {
+      if(currentIndex < 0) return alert('Load a photo first');
+      const p = clientToCanvasCoords(e.clientX, e.clientY);
+      lastTapPos = p;
+      origInput.value = '';
+      feeInput.value = '';
+      useCustom.checked = false;
+      customInput.style.display = 'none';
+      customInput.value = '';
+      priceModal.style.display = 'flex';
+      try { origInput.focus(); origInput.setSelectionRange(origInput.value.length, origInput.value.length); } catch(e){}
+      requestAnimationFrame(()=> { try { origInput.focus(); origInput.setSelectionRange(origInput.value.length, origInput.value.length); } catch(e){} });
+      setTimeout(()=> { try { origInput.focus(); origInput.setSelectionRange(origInput.value.length, origInput.value.length); } catch(e){} }, 140);
+    } catch(e){ console.error('canvas click', e); }
+  });
+
+  useCustom.addEventListener('change', ()=> {
+    customInput.style.display = useCustom.checked ? 'block' : 'none';
+    setTimeout(()=> { if(useCustom.checked) customInput.focus(); else origInput.focus(); }, 50);
+  });
+  cancelPriceBtn.addEventListener('click', ()=> { priceModal.style.display='none'; lastTapPos=null; });
+
+  // parse numeric value(s) from a label like "10+5" or "RM10" -> sum numeric parts
+  function parseLabelToNumber(label){
+    if(!label) return NaN;
+    // find all sequences of digits, optionally with decimals or commas
+    const parts = (label.match(/[\d]+(?:[.,]\d+)*/g) || []);
+    if(parts.length === 0) return NaN;
+    let sum = 0;
+    parts.forEach(p=>{
+      const cleaned = p.replace(/,/g, '');
+      const n = parseFloat(cleaned);
+      if(!isNaN(n)) sum += n;
+    });
+    return sum;
+  }
+
+  addPriceBtn.addEventListener('click', ()=>{
+    try {
+      if(!lastTapPos){ priceModal.style.display='none'; return; }
+      let label = '';
+      if(useCustom.checked){
+        label = (customInput.value || '').trim();
+        if(!label){ alert('Enter custom text or cancel'); return; }
+      } else {
+        const o = (origInput.value || '').trim();
+        const f = (feeInput.value || '').trim();
+        if(!o && !f){ alert('Enter at least original or fee'); return; }
+        label = (o && f) ? `${o}+${f}` : (o || f);
+      }
+      // store buyer only if buyerName input exists; otherwise null
+      const buyerVal = (buyerNameEl.value || '').trim();
+      const buyer = buyerVal === '' ? null : buyerVal;
+      const btotalRaw = (buyerTotalEl.value || '').trim();
+      const btotal = btotalRaw === '' ? null : btotalRaw;
+      images[currentIndex].markers.push({ x_pct: lastTapPos.x / canvas.width, y_pct: lastTapPos.y / canvas.height, price: label, buyer: buyer, buyerTotal: btotal });
+      // after adding, auto-sum buyer total for this image
+      recalcBuyerTotalsForImage(currentIndex);
+      priceModal.style.display = 'none';
+      lastTapPos = null;
+      // save buyer to recents if enabled
+      if(buyer && autoSaveBuyer.checked) addRecentBuyer(buyer);
+      updateList(); redraw();
+    } catch(e){ console.error('addPrice', e); }
+  });
+
+  // recalc totals for image: for each buyer in the image, sum numeric parts of their markers and set image.buyerTotal
+  function recalcBuyerTotalsForImage(idx){
+    if(idx < 0 || idx >= images.length) return;
+    const img = images[idx];
+    const buyersMap = new Map();
+    (img.markers || []).forEach(m=>{
+      // effective buyer for marker: marker.buyer OR image.buyerName (if marker.buyer null)
+      const eff = m.buyer || (img.buyerName ? img.buyerName : null);
+      if(!eff) return;
+      if(!buyersMap.has(eff)) buyersMap.set(eff, { markers: [], sum:0 });
+      buyersMap.get(eff).markers.push(m);
+      const n = parseLabelToNumber(m.price);
+      if(!isNaN(n)) buyersMap.get(eff).sum += n;
+    });
+    // assign totals back: if there's only one buyer in image and image.buyerTotal empty, set it
+    buyersMap.forEach((v, name)=>{
+      // store as integer if whole
+      const display = Number.isInteger(v.sum) ? String(v.sum) : String(v.sum);
+      // set image-level buyer total only if image.buyerName === name OR markers explicitly had buyer set to this name
+      // We'll set image.buyerTotal if image.buyerName matches this name, otherwise store marker-level buyerTotal for markers
+      if(img.buyerName && img.buyerName === name){
+        img.buyerTotal = display;
+        if(currentIndex === idx) buyerTotalEl.value = display;
+      } else {
+        // if markers for this buyer exist and marker-level buyerTotal not present, we can set the image-level buyerTotal only if user hasn't set one
+        // We'll set image.buyerTotal to the last computed buyer's sum if image.buyerName empty (useful for quick flows)
+        if(!img.buyerName){
+          img.buyerName = name;
+          img.buyerTotal = display;
+          if(currentIndex === idx){
+            buyerNameEl.value = name;
+            buyerTotalEl.value = display;
+          }
+        }
+      }
+    });
+    // if multiple buyers exist, don't overwrite other buyer totals in image-level unless image.buyerName matches
+    // Save last used buyer
+    const lastUsed = (buyerNameEl.value || '').trim();
+    if(lastUsed) localStorage.setItem(LS_LAST, lastUsed);
+  }
+
+  // edit marker via modal
+  function openEditModal(idx){
+    try {
+      const m = images[currentIndex].markers[idx];
+      const parts = (m.price || '').split('+');
+      if(parts.length === 2){ origInput.value = parts[0]; feeInput.value = parts[1]; useCustom.checked = false; customInput.style.display='none'; }
+      else { origInput.value = parts[0] || ''; feeInput.value = ''; useCustom.checked = true; customInput.style.display='block'; customInput.value = m.price || ''; }
+      priceModal.style.display = 'flex';
+      lastTapPos = { x: m.x_pct * canvas.width, y: m.y_pct * canvas.height };
+      const oldHandler = addPriceBtn.onclick;
+      addPriceBtn.onclick = ()=> {
+        try {
+          if(!lastTapPos){ priceModal.style.display='none'; addPriceBtn.onclick = oldHandler; return; }
+          let label = '';
+          if(useCustom.checked){
+            label = (customInput.value || '').trim();
+            if(!label){ alert('Enter custom text or cancel'); return; }
+          } else {
+            const o = (origInput.value || '').trim();
+            const f = (feeInput.value || '').trim();
+            if(!o && !f){ alert('Enter at least original or fee'); return; }
+            label = (o && f) ? `${o}+${f}` : (o || f);
+          }
+          const buyerVal = (buyerNameEl.value || '').trim();
+          const buyer = buyerVal === '' ? null : buyerVal;
+          const btotalRaw = (buyerTotalEl.value || '').trim();
+          const btotal = btotalRaw === '' ? null : btotalRaw;
+          images[currentIndex].markers[idx] = { x_pct: lastTapPos.x / canvas.width, y_pct: lastTapPos.y / canvas.height, price: label, buyer: buyer, buyerTotal: btotal };
+          recalcBuyerTotalsForImage(currentIndex);
+          priceModal.style.display = 'none';
+          lastTapPos = null;
+          addPriceBtn.onclick = oldHandler;
+          if(buyer && autoSaveBuyer.checked) addRecentBuyer(buyer);
+          updateList(); redraw();
+        } catch(e){ console.error('edit addPrice error', e); addPriceBtn.onclick = oldHandler; }
+      };
+    } catch(e){ console.error('openEditModal', e); }
+  }
+
+  // dragging labels
+  canvas.addEventListener('pointerdown', (ev)=>{
+    try {
+      if(currentIndex < 0) return;
+      const pt = clientToCanvasCoords(ev.clientX, ev.clientY);
+      const list = images[currentIndex].markers || [];
+      for(let i=0;i<list.length;i++){
+        const m = list[i];
+        const x = m.x_pct * canvas.width, y = m.y_pct * canvas.height;
+        const box = computeLabelBox(m.price, x, y, sizeRange.value, canvas.width, canvas.height);
+        if(pt.x >= box.bx && pt.x <= box.bx + box.bw && pt.y >= box.by && pt.y <= box.by + box.bh){
+          dragging = { idx:i, offsetX: pt.x - x, offsetY: pt.y - y };
+          isPointerDown = true;
+          return;
+        }
+      }
+      for(let i=0;i<list.length;i++){
+        const m = list[i];
+        const mx = m.x_pct * canvas.width, my = m.y_pct * canvas.height;
+        if(Math.hypot(mx - pt.x, my - pt.y) < 18){
+          dragging = { idx:i, offsetX: pt.x - mx, offsetY: pt.y - my };
+          isPointerDown = true;
+          return;
+        }
+      }
+    } catch(e){ console.error('pointerdown', e); }
+  });
+
+  window.addEventListener('pointermove', (ev)=>{
+    try {
+      if(!isPointerDown || !dragging) return;
+      const pt = clientToCanvasCoords(ev.clientX, ev.clientY);
+      const i = dragging.idx;
+      const list = images[currentIndex].markers;
+      const newX = pt.x - (dragging.offsetX || 0);
+      const newY = pt.y - (dragging.offsetY || 0);
+      list[i].x_pct = Math.max(0.01, Math.min(0.99, newX / canvas.width));
+      list[i].y_pct = Math.max(0.01, Math.min(0.99, newY / canvas.height));
+      updateList(); redraw();
+    } catch(e){ console.error('pointermove', e); }
+  });
+
+  window.addEventListener('pointerup', ()=> { isPointerDown=false; dragging=null; });
+
+  function updateList(){
+    markerList.innerHTML = '';
+    if(currentIndex < 0){ markerList.textContent = 'No image selected.'; return; }
+    const entry = images[currentIndex];
+    if(!entry.markers || entry.markers.length===0){ markerList.textContent = 'No markers yet. Tap the image to add labels.'; return; }
+    entry.markers.forEach((m, idx)=>{
+      const div = document.createElement('div'); div.className='markerItem';
+      const left = document.createElement('div');
+      const buyerLabel = m.buyer ? ` (${m.buyer}${m.buyerTotal? ' • total '+m.buyerTotal:''})` : (m.buyerTotal ? ` (• total ${m.buyerTotal})` : '');
+      left.innerHTML = `<strong>${m.price}</strong> <span class="small">${buyerLabel}</span>`;
+      div.appendChild(left);
+      const buttons = document.createElement('div'); buttons.style.display='flex'; buttons.style.gap='6px';
+      const edit = document.createElement('button'); edit.className='btn secondary'; edit.textContent='Edit'; edit.style.fontSize='12px';
+      edit.onclick = ()=> openEditModal(idx);
+      const rm = document.createElement('button'); rm.className='btn secondary'; rm.textContent='Remove'; rm.style.fontSize='12px';
+      rm.onclick = ()=> { entry.markers.splice(idx,1); recalcBuyerTotalsForImage(currentIndex); updateList(); redraw(); };
+      buttons.appendChild(edit); buttons.appendChild(rm); div.appendChild(buttons);
+      markerList.appendChild(div);
+    });
+  }
+
+  // generation & batch (same as before)
+  generateBtn.addEventListener('click', async ()=> {
+    if(currentIndex < 0) return alert('No image selected.');
+    saveCurrentToState();
+    generatedList.innerHTML = 'Generating…';
+    await new Promise(r=>setTimeout(r,50));
+    generatedList.innerHTML = '';
+    lastBatchFiles = [];
+    await generateForIndex(currentIndex, { appendToList:true, includeImageName:true, collectFiles:true });
+    showBatchControlsIfAny();
+  });
+
+  generateAllBtn.addEventListener('click', async ()=> {
+    if(images.length === 0) return alert('No images.');
+    saveCurrentToState();
+    generatedList.innerHTML = 'Generating for all images…';
+    await new Promise(r=>setTimeout(r,50));
+    generatedList.innerHTML = '';
+    lastBatchFiles = [];
+    const exportW = Math.max(200, parseInt(exportWidthEl.value) || 1200);
+    const quality = Math.min(1, Math.max(0.1, parseFloat(exportQualityEl.value) || 0.8));
+    for(let i=0;i<images.length;i++){
+      await generateForIndex(i, { exportW, quality, appendToList:true, includeImageName:true, collectFiles:true });
+    }
+    showBatchControlsIfAny();
+    const note = document.createElement('div'); note.className='small'; note.style.marginTop='8px';
+    note.textContent = 'Batch generation finished.';
+    generatedList.appendChild(note);
+  });
+
+  function showBatchControlsIfAny(){
+    batchActions.innerHTML = '';
+    if(!lastBatchFiles || lastBatchFiles.length === 0) return;
+    const shareBtn = document.createElement('button'); shareBtn.className='btn'; shareBtn.textContent='Share All';
+    shareBtn.onclick = async ()=> {
+      try {
+        const files = lastBatchFiles.map(x=>x.file);
+        if(navigator.canShare && navigator.canShare({ files })){ await navigator.share({ files, title:'Annotated images' }); }
+        else { if(confirm('Share not supported: download all instead?')) downloadAllFallback(); }
+      } catch(e){ alert('Share failed: '+e); }
+    };
+    const dlBtn = document.createElement('button'); dlBtn.className='btn secondary'; dlBtn.textContent='Download All';
+    dlBtn.onclick = downloadAllFallback;
+    batchActions.appendChild(shareBtn); batchActions.appendChild(dlBtn);
+  }
+
+  function downloadAllFallback(){
+    lastBatchFiles.forEach(x=>{
+      const a = document.createElement('a'); a.href = URL.createObjectURL(x.blob); a.download = x.file.name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    });
+    alert('Downloads triggered — on iOS open each and Save Image to Photos.');
+  }
+
+  async function generateForIndex(idx, opts){
+    try {
+      if(idx<0 || idx>=images.length) return;
+      const entry = images[idx];
+      // buyers group
+      const buyers = {};
+      (entry.markers||[]).forEach(m=>{
+        const eff = m.buyer || (entry.buyerName ? entry.buyerName : null);
+        if(!eff) return;
+        if(!buyers[eff]) buyers[eff] = { markers: [], total: '' };
+        buyers[eff].markers.push(m);
+        if(m.buyerTotal) buyers[eff].total = m.buyerTotal;
+      });
+      if(entry.buyerName && !buyers[entry.buyerName]) buyers[entry.buyerName] = { markers: [], total: entry.buyerTotal||'' };
+      const exportW = opts?.exportW || Math.max(200, parseInt(exportWidthEl.value) || 1200);
+      const quality = opts?.quality ?? Math.min(1, Math.max(0.1, parseFloat(exportQualityEl.value) || 0.8));
+      for(const bname in buyers){
+        const info = buyers[bname];
+        const scale = Math.min(1, exportW / canvas.width);
+        const outW = Math.round(canvas.width * scale);
+        const outH = Math.round(canvas.height * scale);
+        const out = document.createElement('canvas'); out.width = outW; out.height = outH;
+        const octx = out.getContext('2d');
+        octx.drawImage(entry.img, 0, 0, outW, outH);
+        const pad = Math.round(outW*0.01)+8;
+        const factor = sizeRange.value/4;
+        const nameSize = Math.max(14, Math.round(outW*0.035*factor));
+        octx.font = `bold ${nameSize}px -apple-system, system-ui, Arial`;
+        const nmW = octx.measureText(bname).width; const nameBw = nmW + 16;
+        octx.fillStyle = 'rgba(255,255,255,0.95)'; roundRect(octx, pad-6, pad-8, nameBw, nameSize+14, 8, true, false);
+        octx.fillStyle = '#000'; octx.textAlign = 'center'; octx.textBaseline='middle';
+        octx.fillText(bname, pad-6 + nameBw/2, pad + (nameSize/2));
+        const tot = info.total || entry.buyerTotal || '';
+        if(tot){
+          const totalSize = Math.max(12, Math.round(outW*0.028*factor));
+          octx.font = `bold ${totalSize}px -apple-system, system-ui, Arial`;
+          const tbW = octx.measureText(tot).width; const totalBw = tbW + 16;
+          const by = pad + nameSize + 8;
+          octx.fillStyle = 'rgb(0,150,70)'; roundRect(octx, pad-6, by-10, totalBw, totalSize+12, 8, true, false);
+          octx.fillStyle = '#fff'; octx.fillText(tot, pad-6 + totalBw/2, by + (totalSize/2));
+        }
+        octx.textAlign='start'; octx.textBaseline='alphabetic';
+        (info.markers||[]).forEach(m=>{
+          const x = Math.round(m.x_pct * outW);
+          const y = Math.round(m.y_pct * outH);
+          drawLabel(octx, m.price, x, y, sizeRange.value, outW, outH);
+        });
+        const dataURL = out.toDataURL('image/jpeg', quality);
+        const blob = dataURLToBlob(dataURL);
+        const fileName = `${bname.replace(/\s+/g,'_')}_${sanitizeFilename(entry.filename)}.jpg`;
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+        if(opts?.appendToList){
+          const row = document.createElement('div'); row.className='generatedRow';
+          const imgEl = document.createElement('img'); imgEl.src = URL.createObjectURL(blob); imgEl.className='thumb';
+          row.appendChild(imgEl);
+          const meta = document.createElement('div'); meta.innerHTML = `<div style="font-weight:600;margin-bottom:6px">${file.name}</div><div class="small">From: ${entry.filename} • Items: ${(info.markers||[]).length}</div>`;
+          row.appendChild(meta);
+          const actions = document.createElement('div'); actions.style.display='flex'; actions.style.flexDirection='column'; actions.style.gap='6px';
+          const dl = document.createElement('a'); dl.className='link'; dl.textContent='Download'; dl.href = URL.createObjectURL(blob); dl.download = file.name;
+          const sh = document.createElement('button'); sh.className='btn'; sh.textContent='Share / Save';
+          sh.onclick = async ()=> {
+            if(navigator.canShare && navigator.canShare({ files: [file] })){ try { await navigator.share({ files: [file], title: file.name }); } catch(e){ alert('Share failed'); } }
+            else { const t = document.createElement('a'); t.href = URL.createObjectURL(blob); t.download = file.name; document.body.appendChild(t); t.click(); document.body.removeChild(t); alert('Use Save Image to add to Photos.'); }
+          };
+          actions.appendChild(dl); actions.appendChild(sh); row.appendChild(actions);
+          generatedList.appendChild(row);
+        }
+        if(opts?.collectFiles) lastBatchFiles.push({ file, blob, name: file.name });
+      }
+    } catch(e){ console.error('generateForIndex', e); }
+  }
+
+  // summary generator (unchanged logic but uses auto-summed totals if available)
+  generateSummaryBtn.addEventListener('click', ()=> { summaryText.value = buildSummary(); });
+
+  function buildSummary(){
+    saveCurrentToState();
+    const aggregated = new Map();
+    images.forEach(img=>{
+      const buyersInImage = new Map();
+      (img.markers||[]).forEach(m=>{
+        const eff = m.buyer || (img.buyerName ? img.buyerName : null);
+        if(!eff) return;
+        if(!buyersInImage.has(eff)) buyersInImage.set(eff, { totals: [], markers: [] });
+        buyersInImage.get(eff).markers.push(m);
+        if(m.buyerTotal) buyersInImage.get(eff).totals.push(m.buyerTotal);
+      });
+      if(img.buyerName && !buyersInImage.has(img.buyerName)) buyersInImage.set(img.buyerName, { totals: [], markers: [] });
+      for(const [name, info] of buyersInImage.entries()){
+        let chosen = '';
+        if(info.totals.length>0) chosen = String(info.totals.filter(Boolean).slice(-1)[0] || '');
+        else if(img.buyerName && img.buyerName===name && img.buyerTotal) chosen = String(img.buyerTotal);
+        if(!chosen) continue;
+        const num = parseFloat(chosen);
+        if(!aggregated.has(name)) aggregated.set(name, { sum:0, numericCount:0, lastStr:'' });
+        const rec = aggregated.get(name);
+        if(!isNaN(num)){ rec.sum += num; rec.numericCount += 1; } else rec.lastStr = chosen;
+      }
+    });
+    if(aggregated.size === 0){
+      const header = summaryTitle.value.trim() || (formatDDMM(new Date()) + ' 扫街03号-肾表');
+      return `${header}\n\n(no buyers yet)\n\n❗️漏掉/有误tt我aaa🥹`;
+    }
+    const lines = [];
+    for(const [name, rec] of aggregated.entries()){
+      if(rec.numericCount>0) lines.push(`${name}💰${Number.isInteger(rec.sum)?String(rec.sum):String(rec.sum)}`);
+      else if(rec.lastStr) lines.push(`${name}💰${rec.lastStr}`);
+    }
+    const header = summaryTitle.value.trim() || (formatDDMM(new Date()) + ' 扫街03号-肾表');
+    return `${header}\n\n${lines.join('\n')}\n\n❗️漏掉/有误tt我aaa🥹`;
+  }
+
+  copySummaryBtn.addEventListener('click', async ()=>{
+    const txt = summaryText.value || buildSummary();
+    try { await navigator.clipboard.writeText(txt); alert('Copied to clipboard.'); } catch(e){ summaryText.select(); document.execCommand('copy'); alert('Copied (fallback).'); }
+  });
+
+  shareSummaryBtn.addEventListener('click', async ()=>{
+    const txt = summaryText.value || buildSummary();
+    if(navigator.canShare && navigator.canShare({ text: txt })){ try { await navigator.share({ text: txt, title:'Summary' }); } catch(e){ alert('Share cancelled'); } }
+    else { try { await navigator.clipboard.writeText(txt); alert('Copied to clipboard (use paste).'); } catch(e){ summaryText.select(); document.execCommand('copy'); alert('Copied (fallback).'); } }
+  });
+
+  // Recents list functions (localStorage)
+  function getRecents(){
+    try {
+      const raw = localStorage.getItem(LS_RECENTS);
+      if(!raw) return [];
+      const arr = JSON.parse(raw);
+      if(!Array.isArray(arr)) return [];
+      return arr;
+    } catch(e){ return []; }
+  }
+  function saveRecents(arr){
+    localStorage.setItem(LS_RECENTS, JSON.stringify(arr.slice(0,50)));
+    renderRecentsUI();
+  }
+  function addRecentBuyer(name){
+    if(!name) return;
+    const arr = getRecents();
+    const idx = arr.indexOf(name);
+    if(idx !== -1) arr.splice(idx,1);
+    arr.unshift(name);
+    saveRecents(arr);
+    localStorage.setItem(LS_LAST, name);
+  }
+  function clearRecentsAll(){
+    localStorage.removeItem(LS_RECENTS);
+    renderRecentsUI();
+  }
+  clearRecents.addEventListener('click', ()=> { if(confirm('Clear recent buyer names?')){ clearRecentsAll(); } });
+
+  function initRecentsUI(){
+    renderRecentsUI();
+    // prefill buyerName from last saved
+    const last = localStorage.getItem(LS_LAST);
+    if(last) buyerNameEl.value = last;
+  }
+  function renderRecentsUI(){
+    const arr = getRecents();
+    // list (datalist)
+    recentsListEl.innerHTML = '';
+    arr.slice(0,20).forEach(n=>{
+      const opt = document.createElement('option'); opt.value = n; recentsListEl.appendChild(opt);
+    });
+    // pills
+    recentPills.innerHTML = '';
+    arr.slice(0,12).forEach(n=>{
+      const sp = document.createElement('span'); sp.className='pill'; sp.textContent = n;
+      sp.onclick = ()=> { buyerNameEl.value = n; // assign to current image
+        if(currentIndex >= 0){ images[currentIndex].buyerName = n; images[currentIndex].buyerTotal = images[currentIndex].buyerTotal || ''; buyerTotalEl.value = images[currentIndex].buyerTotal || ''; }
+        localStorage.setItem(LS_LAST, n);
+        redraw();
+      };
+      recentPills.appendChild(sp);
+    });
+  }
+
+  // keep buyer inputs live and persist
+  buyerNameEl.addEventListener('input', ()=>{
+    if(currentIndex >= 0) images[currentIndex].buyerName = buyerNameEl.value || '';
+    if(buyerNameEl.value && autoSaveBuyer.checked) addRecentBuyer(buyerNameEl.value.trim());
+    redraw();
+  });
+  buyerTotalEl.addEventListener('input', ()=>{
+    if(currentIndex >= 0) images[currentIndex].buyerTotal = buyerTotalEl.value || '';
+    redraw();
+  });
+
+  // utils
+  function sanitizeFilename(s){ return (s||'image').replace(/[^a-z0-9_\-\.]/gi,'_'); }
+  function dataURLToBlob(dataurl){
+    const arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]); let n = bstr.length; const u8arr = new Uint8Array(n);
+    while(n--) u8arr[n] = bstr.charCodeAt(n);
+    return new Blob([u8arr], {type:mime});
+  }
+
+  // utility: parse label done earlier
+  function parseLabelToNumber(label){
+    if(!label) return NaN;
+    const parts = (label.match(/[\d]+(?:[.,]\d+)*/g) || []);
+    if(parts.length === 0) return NaN;
+    let sum = 0;
+    parts.forEach(p=>{
+      const cleaned = p.replace(/,/g, '');
+      const n = parseFloat(cleaned);
+      if(!isNaN(n)) sum += n;
+    });
+    return sum;
+  }
+
+  // initial UI text
+  markerList.textContent = 'Load images (camera or album) to begin.';
+
+  // final small utility functions done - end
+})();
+</script>
+</body>
+</html>
